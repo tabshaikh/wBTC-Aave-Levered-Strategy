@@ -67,7 +67,7 @@ contract MyStrategy is BaseStrategy {
 
     // @dev Specify the name of the strategy
     function getName() external pure override returns (string memory) {
-        return "StrategyName";
+        return "wBTC AAVE Strategy";
     }
 
     // @dev Specify the version of the Strategy, for upgrades
@@ -77,12 +77,13 @@ contract MyStrategy is BaseStrategy {
 
     /// @dev Balance of want currently held in strategy positions
     function balanceOfPool() public view override returns (uint256) {
-        return 0;
+        // Amount of aTokens
+        return IERC20Upgradeable(aToken).balanceOf(address(this));
     }
 
     /// @dev Returns true if this strategy requires tending
     function isTendable() public view override returns (bool) {
-        return true;
+        return balanceOfWant() > 0;
     }
 
     // @dev These are the tokens that cannot be moved except by the vault
@@ -122,10 +123,14 @@ contract MyStrategy is BaseStrategy {
     /// @dev invest the amount of want
     /// @notice When this function is called, the controller has already sent want to this
     /// @notice Just get the current balance and then invest accordingly
-    function _deposit(uint256 _amount) internal override {}
+    function _deposit(uint256 _amount) internal override {
+        ILendingPool(LENDING_POOL).deposit(want, _amount, address(this), 0);
+    }
 
     /// @dev utility function to withdraw everything for migration
-    function _withdrawAll() internal override {}
+    function _withdrawAll() internal override {
+        ILendingPool(LENDING_POOL).withdraw(want, balanceOfPool(), address(this));
+    }
 
     /// @dev withdraw the specified amount of want, liquidate from aToken to want, paying off any necessary debt for the conversion
     function _withdrawSome(uint256 _amount)
@@ -133,6 +138,12 @@ contract MyStrategy is BaseStrategy {
         override
         returns (uint256)
     {
+        if(_amount > balanceOfPool()) {
+            _amount = balanceOfPool();
+        }
+
+        ILendingPool(LENDING_POOL).withdraw(want, _amount, address(this));
+
         return _amount;
     }
 
@@ -185,6 +196,11 @@ contract MyStrategy is BaseStrategy {
     /// @dev Rebalance, Compound or Pay off debt here
     function tend() external whenNotPaused {
         _onlyAuthorizedActors();
+
+        if (balanceOfWant() > 0){
+            _deposit(balanceOfWant());
+        }
+
     }
 
     /// ===== Internal Helper Functions =====
