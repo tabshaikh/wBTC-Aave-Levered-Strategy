@@ -11,6 +11,8 @@ import "../deps/@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgrade
 
 import "../interfaces/badger/IController.sol";
 import "../interfaces/aave/ILendingPool.sol";
+import "../interfaces/aave/IAaveIncentivesController.sol";
+import "../interfaces/uniswap/ISwapRouter.sol";
 
 import {BaseStrategy} from "../deps/BaseStrategy.sol";
 
@@ -24,6 +26,10 @@ contract MyStrategy is BaseStrategy {
     address public reward; // Token we farm and swap to want / aToken
 
     address public constant LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
+    address public constant INCENTIVES_CONTROLLER = 0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5;
+    address public constant ROUTER = 0xE592427A0AEce92De3Edee1F18E0157C05861564;
+    address public constant AAVE_TOKEN = 0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9;
+    address public constant WETH_TOKEN = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     // Used to signal to the Badger Tree that rewards where sent to it
     event TreeDistribution(
@@ -61,6 +67,11 @@ contract MyStrategy is BaseStrategy {
 
         /// @dev do one off approvals here
         IERC20Upgradeable(want).safeApprove(LENDING_POOL, type(uint256).max);
+
+        // Adding approve for uniswap router else it gives STF(Safe transfer failure) error 
+        IERC20Upgradeable(reward).safeApprove(ROUTER, type(uint256).max);
+        IERC20Upgradeable(AAVE_TOKEN).safeApprove(ROUTER, type(uint256).max);
+
     }
 
     /// ===== View Functions =====
@@ -154,6 +165,44 @@ contract MyStrategy is BaseStrategy {
         uint256 _before = IERC20Upgradeable(want).balanceOf(address(this));
 
         // Write your code here
+
+        address[] memory assets = new address[](1);
+        assets[0] = aToken;
+
+        IAaveIncentivesController(INCENTIVES_CONTROLLER).claimRewards(assets, type(uint256).max, address(this));
+
+        uint256 rewardsAmount = IERC20Upgradeable(reward).balanceOf(address(this));
+
+        if(rewardsAmount == 0) {
+            return 0;
+        }
+
+        // Still confusing ...
+
+        ISwapRouter.ExactInputSingleParams memory fromRewardToAAVEParams = ISwapRouter.ExactInputSingleParams(
+            reward,
+            AAVE_TOKEN,
+            10000,
+            address(this),
+            now, // exploitable how?
+            rewardsAmount,
+            0, //Minimum output
+            0 // Minumum output in square root, 0 not suitable can be sandwitched? use chainlink
+        );
+
+        ISwapRouter(ROUTER).exactInputSingle(fromRewardToAAVEParams);
+
+        bytes memory path = abi.encodePacked(AAVE_TOKEN, uint24(10000), WETH_TOKEN, uint24(10000), want);
+        // why here ExactInputParams instead of single
+        ISwapRouter.ExactInputParams memory fromAAVEToWBTCParams = ISwapRouter.ExactInputParams(
+            path,
+            address(this),
+            now, 
+            IERC20Upgradeable(AAVE_TOKEN).balanceOf(address(this)),
+            0
+        );
+
+        ISwapRouter(ROUTER).exactInput(fromAAVEToWBTCParams);
 
         uint256 earned =
             IERC20Upgradeable(want).balanceOf(address(this)).sub(_before);
