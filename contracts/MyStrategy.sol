@@ -10,6 +10,7 @@ import "../deps/@openzeppelin/contracts-upgradeable/utils/AddressUpgradeable.sol
 import "../deps/@openzeppelin/contracts-upgradeable/token/ERC20/SafeERC20Upgradeable.sol";
 
 import "../interfaces/badger/IController.sol";
+import "../interfaces/aave/ILendingPool.sol";
 
 import {BaseStrategy} from "../deps/BaseStrategy.sol";
 
@@ -19,8 +20,10 @@ contract MyStrategy is BaseStrategy {
     using SafeMathUpgradeable for uint256;
 
     // address public want // Inherited from BaseStrategy, the token the strategy wants, swaps into and tries to grow
-    address public lpComponent; // Token we provide liquidity with
-    address public reward; // Token we farm and swap to want / lpComponent
+    address public aToken; // Token we provide liquidity with
+    address public reward; // Token we farm and swap to want / aToken
+
+    address public constant LENDING_POOL = 0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9;
 
     // Used to signal to the Badger Tree that rewards where sent to it
     event TreeDistribution(
@@ -49,7 +52,7 @@ contract MyStrategy is BaseStrategy {
 
         /// @dev Add config here
         want = _wantConfig[0];
-        lpComponent = _wantConfig[1];
+        aToken = _wantConfig[1];
         reward = _wantConfig[2];
 
         performanceFeeGovernance = _feeConfig[0];
@@ -57,7 +60,7 @@ contract MyStrategy is BaseStrategy {
         withdrawalFee = _feeConfig[2];
 
         /// @dev do one off approvals here
-        // IERC20Upgradeable(want).safeApprove(gauge, type(uint256).max);
+        IERC20Upgradeable(want).safeApprove(LENDING_POOL, type(uint256).max);
     }
 
     /// ===== View Functions =====
@@ -91,7 +94,7 @@ contract MyStrategy is BaseStrategy {
     {
         address[] memory protectedTokens = new address[](3);
         protectedTokens[0] = want;
-        protectedTokens[1] = lpComponent;
+        protectedTokens[1] = aToken;
         protectedTokens[2] = reward;
         return protectedTokens;
     }
@@ -124,7 +127,7 @@ contract MyStrategy is BaseStrategy {
     /// @dev utility function to withdraw everything for migration
     function _withdrawAll() internal override {}
 
-    /// @dev withdraw the specified amount of want, liquidate from lpComponent to want, paying off any necessary debt for the conversion
+    /// @dev withdraw the specified amount of want, liquidate from aToken to want, paying off any necessary debt for the conversion
     function _withdrawSome(uint256 _amount)
         internal
         override
