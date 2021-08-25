@@ -31,7 +31,9 @@ def deployed():
     governance = accounts.at(BADGER_DEV_MULTISIG, force=True)
 
     controller = Controller.deploy({"from": deployer})
-    controller.initialize(BADGER_DEV_MULTISIG, strategist, keeper, BADGER_DEV_MULTISIG)
+    controller.initialize(
+        BADGER_DEV_MULTISIG, strategist, keeper, BADGER_DEV_MULTISIG, {"from": deployer}
+    )
 
     sett = SettV3.deploy({"from": deployer})
     sett.initialize(
@@ -43,10 +45,11 @@ def deployed():
         False,
         "prefix",
         "PREFIX",
+        {"from": deployer},
     )
 
     sett.unpause({"from": governance})
-    controller.setVault(WANT, sett)
+    controller.setVault(WANT, sett, {"from": deployer})
 
     ## TODO: Add guest list once we find compatible, tested, contract
     # guestList = VipCappedGuestListWrapperUpgradeable.deploy({"from": deployer})
@@ -55,7 +58,7 @@ def deployed():
     # guestList.setUserDepositCap(100000000)
     # sett.setGuestList(guestList, {"from": governance})
 
-    ## Start up Strategy
+    ## Start up Strategy
     strategy = MyStrategy.deploy({"from": deployer})
     strategy.initialize(
         BADGER_DEV_MULTISIG,
@@ -65,24 +68,25 @@ def deployed():
         guardian,
         PROTECTED_TOKENS,
         FEES,
+        {"from": deployer},
     )
 
-    ## Tool that verifies bytecode (run independently) <- Webapp for anyone to verify
+    ## Tool that verifies bytecode (run independetly) <- Webapp for anyone to verify
 
     ## Set up tokens
     want = interface.IERC20(WANT)
     lpComponent = interface.IERC20(LP_COMPONENT)
     rewardToken = interface.IERC20(REWARD_TOKEN)
 
-    ## Wire up Controller to Strart
-    ## In testing will pass, but on live it will fail
+    ## Wire up Controller to Strart
+    ## In testing will pass, but on live it will fail
     controller.approveStrategy(WANT, strategy, {"from": governance})
     controller.setStrategy(WANT, strategy, {"from": deployer})
 
     ## Uniswap some tokens here
     router = interface.IUniswapRouterV2("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
     router.swapExactETHForTokens(
-        0,  ## Mint out
+        0,  ## Mint out
         ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", WANT],
         deployer,
         9999999999999999,
