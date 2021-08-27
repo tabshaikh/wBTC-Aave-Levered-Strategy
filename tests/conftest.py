@@ -1,10 +1,4 @@
-from brownie import (
-    accounts,
-    interface,
-    Controller,
-    SettV3,
-    MyStrategy,
-)
+from brownie import accounts, interface, Controller, SettV3, MyStrategy, Contract
 from config import (
     BADGER_DEV_MULTISIG,
     WANT,
@@ -140,6 +134,24 @@ def want(deployed):
 @pytest.fixture
 def tokens():
     return [WANT, LP_COMPONENT, REWARD_TOKEN]
+
+
+@pytest.fixture
+def borrowed():
+    token_address = "0x9c39809Dec7F95F5e0713634a4D0701329B3b4d2"  # this should be the address of the ERC-20 used by the strategy/vault (DAI)
+    yield Contract(token_address)
+
+
+@pytest.fixture
+def incentivesController():
+    token_address = "0xd784927Ff2f95ba542BfC824c8a8a98F3495f6b5"
+    yield Contract(token_address)
+
+
+@pytest.fixture
+def aave():
+    token_address = "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9"  # this should be the address of the ERC-20 used by the strategy/vault (DAI)
+    yield Contract(token_address)
 
 
 ## Accounts ##
