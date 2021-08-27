@@ -255,69 +255,6 @@ contract MyStrategy is BaseStrategy {
 
     /* Leverage functions */
     // Gives the maximum amount we can borrow ...
-
-    function prepareReturn(uint256 _debtOutstanding)
-        internal
-        override
-        returns (
-            uint256 _profit,
-            uint256 _loss,
-            uint256 _debtPayment
-        )
-    {
-        // NOTE: This means that if we are paying back we just deleverage
-        // While if we are not paying back, we are harvesting rewards
-
-        // Get current amount of want // used to estimate profit
-        uint256 beforeBalance = IERC20Upgradeable(want).balanceOf(
-            address(this)
-        );
-
-        // Claim stkAAVE -> swap into want
-        _claimRewardsAndGetMoreWant();
-
-        (uint256 earned, uint256 lost) = _repayAAVEBorrow(beforeBalance);
-
-        if (_debtOutstanding > 0) {
-            // Get it all out
-            _divestFromAAVE();
-
-            // Repay debt
-            uint256 maxRepay = want.balanceOf(address(this));
-            if (_debtOutstanding > maxRepay) {
-                // we can't pay all, means we lost some
-                _loss = _debtOutstanding.sub(maxRepay);
-                _debtPayment = maxRepay;
-            } else {
-                // We can pay all, let's do it
-                _debtPayment = _debtOutstanding;
-                // Profit has to be the amount above Vault.debt
-                // What's left is our profit
-                uint256 initialDebt = VaultAPI(vault)
-                    .strategies(address(this))
-                    .totalDebt;
-
-                // In repaying we may report a profit or a loss
-                // In this case we have profit
-                if (maxRepay > initialDebt) {
-                    // We have some profit
-                    _profit = Math.min(
-                        maxRepay.sub(initialDebt),
-                        maxRepay.sub(_debtOutstanding)
-                    );
-                } else {
-                    // We have some loss
-                    _loss = initialDebt.sub(maxRepay);
-                }
-            }
-        } else {
-            // In case of normal harvest, just return the value from `_repayAAVEBorrow`
-            _debtPayment = 0;
-            _profit = earned;
-            _loss = lost;
-        }
-    }
-
     function canBorrow() internal returns (uint256) {
         (, , , , uint256 ltv, uint256 healthFactor) = ILendingPool(LENDING_POOL)
             .getUserAccountData(address(this));
@@ -583,7 +520,7 @@ contract MyStrategy is BaseStrategy {
 
     /// @dev utility function to withdraw everything for migration
     // Would repay the loan and withdraw all the funds
-    function _withdrawAll() internal override {
+    function prepareReturn() internal returns (uint256 _loss) {
         // Before withdrawing all assets harvest rewards
         _claimRewardsAndGetMoreWant();
 
@@ -598,8 +535,11 @@ contract MyStrategy is BaseStrategy {
                     address(this)
                 );
                 // Repay debt
-                uint256 maxRepay = want.balanceOf(address(this));
+                uint256 maxRepay = IERC20Upgradeable(want).balanceOf(
+                    address(this)
+                );
                 uint256 _debtPayment;
+                _loss = 0;
                 if (repayAmount > maxRepay) {
                     // we can't pay all, means we lost some
                     _loss = repayAmount.sub(maxRepay);
@@ -625,7 +565,11 @@ contract MyStrategy is BaseStrategy {
                 address(this)
             );
         }
+
+        return _loss;
     }
+
+    function _withdrawAll() internal override {}
 
     /// ===== Internal Helper Functions =====
 
