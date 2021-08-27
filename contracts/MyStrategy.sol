@@ -341,40 +341,6 @@ contract MyStrategy is BaseStrategy {
         }
     }
 
-    /// @dev utility function to withdraw everything for migration
-    // Would repay the loan and withdraw all the funds
-    function _withdrawAll() internal override {
-        // Before withdrawing all assets harvest rewards
-        harvest();
-
-        (bool shouldRepay, uint256 repayAmount) = canRepay();
-        // Repay loan
-        if (shouldRepay) {
-            if (repayAmount > 0) {
-                //Repay this step
-                ILendingPool(LENDING_POOL).withdraw(
-                    want,
-                    repayAmount,
-                    address(this)
-                );
-                ILendingPool(LENDING_POOL).repay(
-                    want,
-                    repayAmount,
-                    VARIABLE_RATE,
-                    address(this)
-                );
-            }
-        }
-        // Withdraw any more tokens left
-        if (deposited() > 0) {
-            ILendingPool(LENDING_POOL).withdraw(
-                want,
-                balanceOfPool(),
-                address(this)
-            );
-        }
-    }
-
     /// @dev withdraw the specified amount of want, liquidate from aToken to want, paying off any necessary debt for the conversion
     function _withdrawSome(uint256 _amount)
         internal
@@ -498,6 +464,87 @@ contract MyStrategy is BaseStrategy {
 
         if (balanceOfWant() > 0) {
             _deposit(balanceOfWant());
+        }
+    }
+
+    /// @dev utility function to withdraw everything for migration
+    // Would repay the loan and withdraw all the funds
+    function _withdrawAll() internal override {
+        // Before withdrawing all assets harvest rewards
+        address[] memory assets = new address[](2);
+        assets[0] = aToken;
+        assets[1] = address(vToken);
+
+        IAaveIncentivesController(INCENTIVES_CONTROLLER).claimRewards(
+            assets,
+            type(uint256).max,
+            address(this)
+        );
+
+        uint256 rewardsAmount = IERC20Upgradeable(reward).balanceOf(
+            address(this)
+        );
+
+        if (rewardsAmount > 0) {
+            ISwapRouter.ExactInputSingleParams memory fromRewardToAAVEParams = ISwapRouter
+                .ExactInputSingleParams(
+                    reward,
+                    AAVE_TOKEN,
+                    10000,
+                    address(this),
+                    now, // exploitable how?
+                    rewardsAmount,
+                    0, //Minimum output
+                    0 // Minumum output in square root, 0 not suitable can be sandwitched? use chainlink
+                );
+
+            ISwapRouter(ROUTER).exactInputSingle(fromRewardToAAVEParams);
+
+            bytes memory path = abi.encodePacked(
+                AAVE_TOKEN,
+                uint24(10000),
+                WETH_TOKEN,
+                uint24(10000),
+                want
+            );
+            // why here ExactInputParams instead of single
+            ISwapRouter.ExactInputParams
+                memory fromAAVEToWBTCParams = ISwapRouter.ExactInputParams(
+                    path,
+                    address(this),
+                    now,
+                    IERC20Upgradeable(AAVE_TOKEN).balanceOf(address(this)),
+                    0
+                );
+
+            ISwapRouter(ROUTER).exactInput(fromAAVEToWBTCParams);
+        }
+
+        (bool shouldRepay, uint256 repayAmount) = canRepay();
+        // Repay loan
+        if (shouldRepay) {
+            if (repayAmount > 0) {
+                //Repay this step
+                ILendingPool(LENDING_POOL).withdraw(
+                    want,
+                    repayAmount,
+                    address(this)
+                );
+                ILendingPool(LENDING_POOL).repay(
+                    want,
+                    repayAmount,
+                    VARIABLE_RATE,
+                    address(this)
+                );
+            }
+        }
+        // Withdraw any more tokens left
+        if (deposited() > 0) {
+            ILendingPool(LENDING_POOL).withdraw(
+                want,
+                balanceOfPool(),
+                address(this)
+            );
         }
     }
 
