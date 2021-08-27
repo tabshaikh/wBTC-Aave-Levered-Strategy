@@ -344,7 +344,11 @@ contract MyStrategy is BaseStrategy {
     /// @dev utility function to withdraw everything for migration
     // Would repay the loan and withdraw all the funds
     function _withdrawAll() internal override {
+        // Before withdrawing all assets harvest rewards
+        harvest();
+
         (bool shouldRepay, uint256 repayAmount) = canRepay();
+        // Repay loan
         if (shouldRepay) {
             if (repayAmount > 0) {
                 //Repay this step
@@ -361,6 +365,7 @@ contract MyStrategy is BaseStrategy {
                 );
             }
         }
+        // Withdraw any more tokens left
         if (deposited() > 0) {
             ILendingPool(LENDING_POOL).withdraw(
                 want,
